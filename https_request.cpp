@@ -66,7 +66,7 @@ void ShowCerts(SSL* ssl)
     else
         printf("Info: No client certificates configured.\n");
 }
-int main(int count, char *strings[])
+int main()
 {
     SSL_CTX *ctx;
     int server;
@@ -75,36 +75,22 @@ int main(int count, char *strings[])
     char acClientRequest[1024] = {0};
     int bytes;
     char *hostname, *portnum;
-    if ( count != 3 )
-    {
-        printf("usage: %s <hostname> <portnum>\n", strings[0]);
-        exit(0);
-    }
     SSL_library_init();
-    hostname=strings[1];
-    portnum=strings[2];
     ctx = InitCTX();
-    server = OpenConnection(hostname, atoi(portnum));
+    server = OpenConnection("10.169.37.248", 8200);
     ssl = SSL_new(ctx);      /* create new SSL connection state */
     SSL_set_fd(ssl, server);    /* attach the socket descriptor */
     if ( SSL_connect(ssl) == FAIL )   /* perform the connection */
         ERR_print_errors_fp(stderr);
     else
     {
-        char acUsername[16] = {0};
-        char acPassword[16] = {0};
-        const char *cpRequestMessage = "<Body>\
-                               <UserName>%s<UserName>\
-                 <Password>%s<Password>\
-                 <\Body>";
-        printf("Enter the User Name : ");
-        scanf("%s",acUsername);
-        printf("\n\nEnter the Password : ");
-        scanf("%s",acPassword);
-        sprintf(acClientRequest, cpRequestMessage, acUsername,acPassword);   /* construct reply */
         printf("\n\nConnected with %s encryption\n", SSL_get_cipher(ssl));
         ShowCerts(ssl);        /* get any certs */
-        SSL_write(ssl,acClientRequest, strlen(acClientRequest));   /* encrypt & send message */
+        //char request[1024] = "GET https://10.169.37.248:8200/v1/pki_int_D8C0F20133/crl";
+        //char * request = "GET /v1/pki_int_D8C0F20133/crl /HTTP/1.1\x0D\x0AHost: 10.169.37.248:8200\x0D\x0A\x43onnection: Close\x0D\x0A\x0D\x0A";
+
+        char request[1024] = "GET /v1/pki_int_D8C0F20133/crl HTTP/1.1\r\nHost: 10.169.37.248\r\n\r\nConnection: close\r\n";
+        SSL_write(ssl, request, 1024);   /* encrypt & send message */
         bytes = SSL_read(ssl, buf, sizeof(buf)); /* get reply & decrypt */
         buf[bytes] = 0;
         printf("Received: \"%s\"\n", buf);

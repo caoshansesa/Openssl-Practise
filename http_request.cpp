@@ -44,7 +44,10 @@ int main(){
         return 0;
     }
 
-    std::string request = "GET /v1/pki_int_D8C0F20133/crl HTTP/1.1\r\nHost: https://" + host+":"+ port + "\r\nConnection: close\r\n\r\n";
+    //std::string request = "GET /v1/pki_int_D8C0F20133/crl HTTP/1.1\r\nHost: https://" + host+":"+ port + "\r\nConnection: close\r\n\r\n";
+    std::string request = "GET /v1/pki_int_D8C0F20133/crl HTTP/1.1\
+Host: 10.169.37.248\
+";
     if (send(socket_desc, request.c_str(), request.size(), 0) < 0){
         std::cout << "failed to send request..." << std::endl;
         close(socket_desc);
