@@ -90,17 +90,51 @@ int main() {
 
     char buffer_1k[1024] = {};
     char buf[2048] = {};
-    int buffer_size1 = SSL_read(ssl, buf, 1024);
+    int buffer_size1;
     int next_read_size = 0;
     int bytes_left = 0;
-    do {
-      bytes_left = SSL_pending(ssl);
-      bytes_left > 1024 ? next_read_size = 1024 : next_read_size = bytes_left;
-      if ((SSL_get_error(ssl, buffer_size1) == SSL_ERROR_WANT_READ)) {
-        int buffer_size2 = SSL_read(ssl, buf + 1024, next_read_size);
-      }
-    } while (bytes_left != 0);
+    int read_blocked_on_write = 1;
+    int offset = 0;
+    bool bFinish = false;
+    while (1) {
+      read_blocked_on_write = 0;
 
+      const int buff_len = 1024;
+      char buff[buff_len];
+
+      buffer_size1 = SSL_read(ssl, buffer_1k, 1024);
+
+      int ssl_err = SSL_get_error(ssl, buffer_size1);
+      if (ssl_err == SSL_ERROR_NONE) {
+        // Save the file
+        // if there is no error, save the buffer to what has been read
+        memcpy(buf + offset, buffer_1k, buffer_size1);
+        offset += buffer_size1;
+        if (SSL_pending(ssl)) {
+          continue;
+        } else {
+          bFinish = true;
+          break;
+        }
+      } else if (ssl_err == SSL_ERROR_ZERO_RETURN) {
+        bFinish = true;
+        break;
+      } else if (ssl_err == SSL_ERROR_WANT_READ) {
+        break;
+      } else if (ssl_err == SSL_ERROR_WANT_WRITE) {
+        /* We get a WANT_WRITE if we're
+        trying to rehandshake and we block on
+        a write during that rehandshake.
+
+        We need to wait on the socket to be
+        writeable but reinitiate the read
+        when it is */
+        read_blocked_on_write = 1;
+        break;
+      } else {
+        return 1;
+      }
+    }
     char *crl = strstr(buf, "\r\n\r\n");
     crl += 4;
     sleep(1);
