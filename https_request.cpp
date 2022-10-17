@@ -1,4 +1,6 @@
+#include <bits/types/FILE.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <malloc.h>
 #include <netdb.h>
 #include <openssl/err.h>
@@ -10,6 +12,7 @@
 #include <unistd.h>
 
 #include <fstream>
+#include <string>
 #define FAIL -1
 using namespace std;
 int OpenConnection(const char *hostname, int port) {
@@ -61,6 +64,139 @@ void ShowCerts(SSL *ssl) {
   } else
     printf("Info: No client certificates configured.\n");
 }
+
+void update_crl_file() {
+  FILE *f = fopen("filename.crl", "rb");
+  if (f == NULL) {
+    printf("can not read file");
+  }
+  int i = 0;
+  fseek(f, 0, SEEK_END);
+  int size = ftell(f);
+  fseek(f, 0, SEEK_SET);
+  char *resp = (char *)malloc(size);
+  char *crl = (char *)malloc(size);
+  fread(resp, size, 1, f);
+
+  int current_crl_length = 0;
+  if (strstr(resp, "chunked") != NULL) {
+    char *chunk_length_top = strstr(resp, "chunked");
+    chunk_length_top += 9;  // size for chunked\r\n
+    int chunk_length = 0;
+    do {
+      chunk_length_top += 2;  // \r\n
+      char *chunk_length_bottom = strstr(chunk_length_top, "\r\n");
+      int chunk_length_digits = chunk_length_bottom - chunk_length_top;
+      char *chunk_length_in_str = (char *)malloc(chunk_length_digits);
+      memcpy(chunk_length_in_str, chunk_length_top, chunk_length_digits);
+      chunk_length = atoi(chunk_length_in_str);
+      char* payload = chunk_length_bottom +2; // \r\n
+      char* crl_append_location = crl + current_crl_length;
+      // save the buffer to crl buffer
+      memcpy(crl_append_location, payload, chunk_length);
+
+      // save the length to the crl length
+      current_crl_length += chunk_length;
+      free(chunk_length_in_str);
+    } while (chunk_length != 0);
+  }
+
+  ofstream MyFile("filename1.crl");
+  MyFile.write(crl, current_crl_length);
+  // Close the file
+  MyFile.close();
+  free(resp);
+}
+
+#define BUFSIZZ 2048
+char s2c[BUFSIZZ] = {};
+void read_write(SSL *ssl, int sock) {
+  int width;
+  int r, c2sl = 0, c2s_offset = 0;
+  int read_blocked_on_write = 0, write_blocked_on_read = 0, read_blocked = 0;
+  fd_set readfds, writefds;
+  int shutdown_wait = 0;
+  int ofcmode;
+  FILE *f = fopen("filename.crl", "wb+");
+  char resp[2048] = {};
+
+  /*First we make the socket nonblocking*/
+  ofcmode = fcntl(sock, F_GETFL, 0);
+  ofcmode |= O_NDELAY;
+  if (fcntl(sock, F_SETFL, ofcmode)) printf("Couldn't make socket nonblocking");
+
+  width = sock + 1;
+
+  while (1) {
+    FD_ZERO(&readfds);
+    FD_ZERO(&writefds);
+
+    FD_SET(sock, &readfds);
+
+    /* If we're waiting for a read on the socket don't
+       try to write to the server */
+    if (!write_blocked_on_read) {
+      /* If we have data in the write queue don't try to
+         read from stdin */
+      if (c2sl || read_blocked_on_write)
+        FD_SET(sock, &writefds);
+      else
+        FD_SET(fileno(stdin), &readfds);
+    }
+
+    r = select(width, &readfds, &writefds, 0, 0);
+    if (r == 0) continue;
+
+    /* Now check if there's data to read */
+    if ((FD_ISSET(sock, &readfds) && !write_blocked_on_read) ||
+        (read_blocked_on_write && FD_ISSET(sock, &writefds))) {
+      do {
+        read_blocked_on_write = 0;
+        read_blocked = 0;
+
+        r = SSL_read(ssl, s2c, BUFSIZZ);
+
+        switch (SSL_get_error(ssl, r)) {
+          case SSL_ERROR_NONE:
+            fwrite(s2c, r, 1, f);
+            break;
+          case SSL_ERROR_ZERO_RETURN:
+            /* End of data */
+            if (!shutdown_wait) SSL_shutdown(ssl);
+            goto end;
+            break;
+          case SSL_ERROR_WANT_READ:
+            read_blocked = 1;
+            break;
+
+            /* We get a WANT_WRITE if we're
+               trying to rehandshake and we block on
+               a write during that rehandshake.
+
+               We need to wait on the socket to be
+               writeable but reinitiate the read
+               when it is */
+          case SSL_ERROR_WANT_WRITE:
+            read_blocked_on_write = 1;
+            break;
+          default:
+            printf("SSL read problem");
+        }
+
+        /* We need a check for read_blocked here because
+           SSL_pending() doesn't work properly during the
+           handshake. This check prevents a busy-wait
+           loop around SSL_read() */
+      } while (SSL_pending(ssl) && !read_blocked);
+    }
+  }
+end:
+  fclose(f);
+  SSL_free(ssl);
+  close(sock);
+  return;
+}
+
 int main() {
   SSL_CTX *ctx;
   int server;
@@ -87,61 +223,9 @@ int main() {
         "GET /v1/pki_int_D8C0F20133/crl HTTP/1.1\r\nHost: "
         "10.169.37.248\r\n\r\nConnection: close\r\n";
     SSL_write(ssl, request, 1024); /* encrypt & send message */
-
-    char buffer_1k[1024] = {};
-    char buf[2048] = {};
-    int buffer_size1;
-    int next_read_size = 0;
-    int bytes_left = 0;
-    int read_blocked_on_write = 1;
-    int offset = 0;
-    bool bFinish = false;
-    while (1) {
-      read_blocked_on_write = 0;
-
-      const int buff_len = 1024;
-      char buff[buff_len];
-
-      buffer_size1 = SSL_read(ssl, buffer_1k, 1024);
-
-      int ssl_err = SSL_get_error(ssl, buffer_size1);
-      if (ssl_err == SSL_ERROR_NONE) {
-        // Save the file
-        // if there is no error, save the buffer to what has been read
-        memcpy(buf + offset, buffer_1k, buffer_size1);
-        offset += buffer_size1;
-        if (SSL_pending(ssl)) {
-          continue;
-        } else {
-          bFinish = true;
-          break;
-        }
-      } else if (ssl_err == SSL_ERROR_ZERO_RETURN) {
-        bFinish = true;
-        break;
-      } else if (ssl_err == SSL_ERROR_WANT_READ) {
-        break;
-      } else if (ssl_err == SSL_ERROR_WANT_WRITE) {
-        /* We get a WANT_WRITE if we're
-        trying to rehandshake and we block on
-        a write during that rehandshake.
-
-        We need to wait on the socket to be
-        writeable but reinitiate the read
-        when it is */
-        read_blocked_on_write = 1;
-        break;
-      } else {
-        return 1;
-      }
-    }
-    char *crl = strstr(buf, "\r\n\r\n");
-    crl += 4;
-    sleep(1);
-    ofstream MyFile("filename.crl");
-    MyFile.write(crl, 2048);
-    // Close the file
-    MyFile.close();
+    char buf[BUFSIZZ] = {};
+    read_write(ssl, server);
+    update_crl_file();
   }
   close(server);     /* close socket */
   SSL_CTX_free(ctx); /* release context */
