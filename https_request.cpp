@@ -77,29 +77,7 @@ void update_crl_file() {
   char *resp = (char *)malloc(size);
   char *crl = (char *)malloc(size);
   fread(resp, size, 1, f);
-
-  int current_crl_length = 0;
-  if (strstr(resp, "chunked") != NULL) {
-    char *chunk_length_top = strstr(resp, "chunked");
-    chunk_length_top += 9;  // size for chunked\r\n
-    int chunk_length = 0;
-    do {
-      chunk_length_top += 2;  // \r\n
-      char *chunk_length_bottom = strstr(chunk_length_top, "\r\n");
-      int chunk_length_digits = chunk_length_bottom - chunk_length_top;
-      char *chunk_length_in_str = (char *)malloc(chunk_length_digits);
-      memcpy(chunk_length_in_str, chunk_length_top, chunk_length_digits);
-      chunk_length = atoi(chunk_length_in_str);
-      char* payload = chunk_length_bottom +2; // \r\n
-      char* crl_append_location = crl + current_crl_length;
-      // save the buffer to crl buffer
-      memcpy(crl_append_location, payload, chunk_length);
-
-      // save the length to the crl length
-      current_crl_length += chunk_length;
-      free(chunk_length_in_str);
-    } while (chunk_length != 0);
-  }
+  
 
   ofstream MyFile("filename1.crl");
   MyFile.write(crl, current_crl_length);
@@ -110,7 +88,7 @@ void update_crl_file() {
 
 #define BUFSIZZ 2048
 char s2c[BUFSIZZ] = {};
-void read_write(SSL *ssl, int sock) {
+void read_crl_buffer(SSL *ssl, int sock) {
   int width;
   int r, c2sl = 0, c2s_offset = 0;
   int read_blocked_on_write = 0, write_blocked_on_read = 0, read_blocked = 0;
@@ -224,7 +202,7 @@ int main() {
         "10.169.37.248\r\n\r\nConnection: close\r\n";
     SSL_write(ssl, request, 1024); /* encrypt & send message */
     char buf[BUFSIZZ] = {};
-    read_write(ssl, server);
+    read_crl_buffer(ssl, server);
     update_crl_file();
   }
   close(server);     /* close socket */
