@@ -77,16 +77,26 @@ void update_crl_file() {
   char *resp = (char *)malloc(size);
   char *crl = (char *)malloc(size);
   fread(resp, size, 1, f);
+
+  char* crl_buffer_after_length = strstr(resp, "\r\n\r\n");
+  crl_buffer_after_length +=4;
   
+  char* crl_buffer = strstr(crl_buffer_after_length, "\r\n");
+  crl_buffer +=2;
+  
+  int crl_length = size - (crl_buffer -resp);
+  crl_length = crl_length - 7; // "\r\n \r\n\r\n" 7 bytes in the end;
+
 
   ofstream MyFile("filename1.crl");
-  MyFile.write(crl, current_crl_length);
+  MyFile.write(crl_buffer, crl_length);
+
   // Close the file
   MyFile.close();
   free(resp);
 }
 
-#define BUFSIZZ 2048
+#define BUFSIZZ 1024
 char s2c[BUFSIZZ] = {};
 void read_crl_buffer(SSL *ssl, int sock) {
   int width;
@@ -96,7 +106,6 @@ void read_crl_buffer(SSL *ssl, int sock) {
   int shutdown_wait = 0;
   int ofcmode;
   FILE *f = fopen("filename.crl", "wb+");
-  char resp[2048] = {};
 
   /*First we make the socket nonblocking*/
   ofcmode = fcntl(sock, F_GETFL, 0);
@@ -133,6 +142,10 @@ void read_crl_buffer(SSL *ssl, int sock) {
         read_blocked = 0;
 
         r = SSL_read(ssl, s2c, BUFSIZZ);
+           if (strstr(s2c, "HTTP/1.1 400 Bad Request")) {
+               r = 0;
+               SSL_shutdown(ssl);
+        }
 
         switch (SSL_get_error(ssl, r)) {
           case SSL_ERROR_NONE:
@@ -157,8 +170,6 @@ void read_crl_buffer(SSL *ssl, int sock) {
           case SSL_ERROR_WANT_WRITE:
             read_blocked_on_write = 1;
             break;
-          default:
-            printf("SSL read problem");
         }
 
         /* We need a check for read_blocked here because
