@@ -15,7 +15,12 @@ OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 $(ODIR)/%.o: %.cpp $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)
 
-https_request: $(OBJ)
+all: http_crl https_request
+
+https_request: https_request.o
+	$(CC) -o $@ $^ $(CFLAGS) $(LIBS)
+
+https_crl: http_crl.o
 	$(CC) -o $@ $^ $(CFLAGS) $(LIBS)
 
 .PHONY: clean
@@ -25,5 +30,4 @@ clean:
 	rm -f https_request
 	rm -f *.o
 
-etags:
-	find . -type f -iname "*.[ch]" | xargs etags --append
+
