@@ -15,19 +15,22 @@ OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 $(ODIR)/%.o: %.cpp $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)
 
-all: http_crl https_request
+all: https_request fetch_http_crl bio_socket
 
 https_request: https_request.o
 	$(CC) -o $@ $^ $(CFLAGS) $(LIBS)
 
-https_crl: http_crl.o
+fetch_http_crl: http_crl.o
+	$(CC) -o $@ $^ $(CFLAGS) $(LIBS)
+
+bio_socket: bio_socket.o
 	$(CC) -o $@ $^ $(CFLAGS) $(LIBS)
 
 .PHONY: clean
 
 clean:
 	rm -f *~ core $(INCDIR)/*~
-	rm -f https_request
+	rm -f https_request fetch* bio_socket
 	rm -f *.o
 
 

@@ -45,10 +45,11 @@ int cert_mgt_get_crl_by_cdp()
     char recvBuff[1024];
     int digit_has_written = 0;
     memset(recvBuff, '0', sizeof(recvBuff));
-    int server_fd = OpenConnection("10.169.37.248", 8200);
-    char request[1024] = "GET /v1/pki_int_D8C0F20133/crl HTTP/1.1\r\n\r\nConnection: close\r\n";
+    int server_fd = OpenConnection("10.169.37.180", 5000);
+    char request[1024] = "GET /PKIClient/api/crl/pki_int_953B9DA915 HTTP/1.1\r\n";
     char response[1024] = "";
-    write(server_fd, request, 1024);
+    int length =  strlen(request);
+    write(server_fd, request, length);
     while ((digit_has_written = read(server_fd, recvBuff, sizeof(recvBuff) - 1)) > 0)
     {
         recvBuff[digit_has_written] = 0;
